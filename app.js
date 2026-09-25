@@ -1,266 +1,169 @@
-const DB_KEY = "pena-connect-v1";
-const CURRENT_USER = { id: "local-user", name: "Mi usuario", role: "commercial" };
+const DB_KEY="pena-connect-v1";
+const CURRENT_USER={id:"local-user",name:"Mi usuario",role:"commercial"};
+const seed={meta:{year:new Date().getFullYear(),annualGoal:0,user:CURRENT_USER},clients:[],visits:[],sales:[]};
+let state=loadState(), currentView="dashboard";
 
-const seed = {
-  meta: { year: new Date().getFullYear(), annualGoal: 0, user: CURRENT_USER },
-  clients: [],
-  visits: [],
-  sales: []
-};
-
-let state = loadState();
-let currentView = "dashboard";
-
-const navItems = [
-  ["dashboard","⌂","Inicio"],["clients","◉","Clientes"],["visits","◷","Agenda"],["map","⌖","Mapa"],["sales","▥","Ventas"]
-];
-
+const navItems=[["dashboard","⌂","Inicio"],["clients","◉","Clientes"],["visits","◷","Agenda"],["map","⌖","Mapa"],["sales","▥","Ventas"]];
 function loadState(){
   try{
-    const raw = localStorage.getItem(DB_KEY);
-    const loaded = raw ? {...seed, ...JSON.parse(raw)} : structuredClone(seed);
-    ensureClientCodes(loaded);
-    return loaded;
-  }catch(e){ return structuredClone(seed); }
+    const raw=localStorage.getItem(DB_KEY);
+    const x=raw?{...seed,...JSON.parse(raw)}:structuredClone(seed);
+    x.clients=x.clients||[];x.visits=x.visits||[];x.sales=x.sales||[];x.meta=x.meta||seed.meta;
+    ensureClientCodes(x);
+    x.clients.forEach(c=>{c.locality=c.locality??c.city??"";c.workshopPhoto=c.workshopPhoto??c.photo??"";c.mapsUrl=c.mapsUrl??c.googleMapsUrl??"";});
+    localStorage.setItem(DB_KEY,JSON.stringify(x));
+    return x;
+  }catch(e){return structuredClone(seed)}
 }
-function save(){ localStorage.setItem(DB_KEY, JSON.stringify(state)); }
-function nextClientCode(clients=state.clients){
-  const nums = clients.map(c => {
-    const m = String(c.code||"").match(/^(?:C|CLI)[- ]?(\d+)$/i);
-    return m ? Number(m[1]) : 0;
-  });
-  return `C${String(Math.max(0,...nums)+1).padStart(4,"0")}`;
+function save(){localStorage.setItem(DB_KEY,JSON.stringify(state))}
+function ensureClientCodes(s){
+ let used=new Set();
+ s.clients.forEach(c=>{let code=String(c.code||"").trim().toUpperCase();if(!code||used.has(code)){let n=1;while(used.has(`C${String(n).padStart(4,"0")}`))n++;code=`C${String(n).padStart(4,"0")}`;}c.code=code;used.add(code)});
 }
-function ensureClientCodes(target=state){
-  const used = new Set();
-  let changed = false;
-  for(const c of (target.clients||[])){
-    const code = String(c.code||"").trim().toUpperCase();
-    if(code && !used.has(code)){ c.code = code; used.add(code); }
-    else {
-      let n = 1;
-      while(used.has(`C${String(n).padStart(4,"0")}`)) n++;
-      c.code = `C${String(n).padStart(4,"0")}`;
-      used.add(c.code);
-      changed = true;
-    }
-  }
-  if(changed && target === state) save();
-  return target;
-}
-function uid(prefix){ return prefix+"_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7); }
+function nextClientCode(){let n=0;state.clients.forEach(c=>{let m=String(c.code||"").match(/^C(\d+)$/i);if(m)n=Math.max(n,+m[1])});return `C${String(n+1).padStart(4,"0")}`}
+function uid(p){return p+"_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,8)}
 function esc(v=""){return String(v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 function euro(v){return new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(Number(v)||0)}
-function dateES(v){if(!v)return "—"; return new Intl.DateTimeFormat("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(v+"T12:00:00"))}
-function pct(a,b){return b?Math.round((a/b)*100):0}
-function monthLabel(i){return ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"][i]}
-function toast(msg){const t=document.getElementById("toast");t.textContent=msg;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)}
-
-function initNav(){
-  document.getElementById("desktopNav").innerHTML = navItems.map(([id,icon,label])=>`<button class="nav-item ${currentView===id?"active":""}" data-view="${id}"><span>${icon}</span>${label}</button>`).join("");
-  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{currentView=b.dataset.view; document.querySelector(".sidebar")?.classList.remove("open"); render();});
+function pct(a,b){return b?Math.round(a/b*100):0}
+function dateES(v){if(!v)return"—";return new Intl.DateTimeFormat("es-ES",{day:"2-digit",month:"2-digit",year:"numeric"}).format(new Date(v+"T12:00:00"))}
+function today(){return new Date().toISOString().slice(0,10)}
+function monthName(i){return["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"][i]}
+function toast(m){let t=document.getElementById("toast");t.textContent=m;t.classList.add("show");setTimeout(()=>t.classList.remove("show"),2200)}
+function clientName(id){return state.clients.find(c=>c.id===id)?.company||"Cliente eliminado"}
+function clientByCode(code){return state.clients.find(c=>String(c.code).toLowerCase()===String(code).toLowerCase())}
+function clientSales(id,year){return state.sales.filter(s=>s.clientId===id&&(!year||new Date(s.date+"T12:00:00").getFullYear()===year)).reduce((a,s)=>a+Number(s.amount||0),0)}
+function monthlySales(year){return Array.from({length:12},(_,m)=>state.sales.filter(s=>new Date(s.date+"T12:00:00").getFullYear()===year&&new Date(s.date+"T12:00:00").getMonth()===m).reduce((a,s)=>a+Number(s.amount||0),0))}
+function rankings(){
+ const rows=state.clients.map(c=>{let a=clientSales(c.id,2025),b=clientSales(c.id,2026),d=b-a;return{c,a,b,d,p:a?d/a*100:(b?100:0)}}).filter(x=>x.a||x.b);
+ return {up:[...rows].filter(x=>x.d>0).sort((a,b)=>b.d-a.d),down:[...rows].filter(x=>x.d<0).sort((a,b)=>a.d-b.d)}
 }
 function render(){
-  initNav();
-  const titles={dashboard:"Inicio",clients:"Clientes",visits:"Agenda",map:"Mapa",sales:"Ventas",settings:"Configuración"};
-  document.getElementById("pageTitle").textContent=titles[currentView];
-  const view=document.getElementById("appView");
-  if(currentView==="dashboard") view.innerHTML=dashboardView();
-  if(currentView==="clients") view.innerHTML=clientsView();
-  if(currentView==="visits") view.innerHTML=visitsView();
-  if(currentView==="map") view.innerHTML=mapView();
-  if(currentView==="sales") view.innerHTML=salesView();
-  if(currentView==="settings") view.innerHTML=settingsView();
-  bindView();
+ const titles={dashboard:"Inicio",clients:"Clientes",visits:"Agenda",map:"Mapa",sales:"Ventas",settings:"Configuración"};
+ document.getElementById("pageTitle").textContent=titles[currentView];
+ document.getElementById("desktopNav").innerHTML=navItems.map(x=>`<button class="nav-item ${currentView===x[0]?"active":""}" data-view="${x[0]}"><span>${x[1]}</span>${x[2]}</button>`).join("");
+ document.getElementById("appView").innerHTML=currentView==="dashboard"?dashboardView():currentView==="clients"?clientsView():currentView==="visits"?visitsView():currentView==="map"?mapView():currentView==="sales"?salesView():settingsView();
+ bind();
 }
+function kpi(label,value,sub,cls=""){return`<div class="card kpi"><div class="label">${label}</div><div class="value ${cls}">${value}</div><div class="sub">${sub}</div></div>`}
 function dashboardView(){
-  const y=state.meta.year, sales=state.sales.filter(s=>new Date(s.date+"T12:00:00").getFullYear()===y);
-  const total=sales.reduce((a,s)=>a+Number(s.amount||0),0), margin=total?sales.reduce((a,s)=>a+Number(s.margin||0),0)/sales.length:0;
-  const goal=Number(state.meta.annualGoal||0), clients=state.clients.filter(c=>c.type==="client").length, prospects=state.clients.filter(c=>c.type==="prospect").length;
-  const pending=state.visits.filter(v=>v.status!=="done" && v.date>=today()).sort((a,b)=>a.date.localeCompare(b.date));
-  const doneThisYear=state.visits.filter(v=>v.status==="done"&&v.date.startsWith(String(y))).length;
-  const months=Array.from({length:12},(_,i)=>sales.filter(s=>new Date(s.date+"T12:00:00").getMonth()===i).reduce((a,s)=>a+Number(s.amount||0),0));
-  const max=Math.max(...months,1);
-  return `<div class="grid" style="gap:16px">
-    <div class="grid two-col">
-      <div class="card hero"><div class="muted">VENTAS ${y}</div><div class="big">${euro(total)}</div><div class="muted">Objetivo ${euro(goal)} · ${pct(total,goal)}% de cumplimiento</div><div style="margin-top:16px" class="progress"><span style="width:${Math.min(pct(total,goal),100)}%"></span></div></div>
-      <div class="card"><div class="section-head"><h2>Mi día</h2><span class="hint">${dateES(today())}</span></div>${dayItems(pending.slice(0,4))}</div>
-    </div>
-    <div class="grid kpi-grid">
-      ${kpi("Clientes",clients,"activos")}
-      ${kpi("Prospectos",prospects,"en cartera")}
-      ${kpi("Visitas pendientes",pending.length,"próximas")}
-      ${kpi("Margen medio",margin?margin.toFixed(1)+"%":"0%","registrado en ventas")}
-    </div>
-    <div class="grid two-col">
-      <div class="card"><div class="section-head"><h2>Evolución de ventas</h2><span class="hint">${y}</span></div><div class="chart">${months.map((v,i)=>`<div class="bar-wrap"><div class="bar" style="height:${Math.max(3,v/max*100)}%"></div><small>${monthLabel(i)}</small></div>`).join("")}</div></div>
-      <div class="card"><div class="section-head"><h2>Próximas visitas</h2><button class="tiny" data-action="new-visit">+ Nueva</button></div>${dayItems(pending.slice(0,6))}</div>
-    </div>
-    <div class="card"><div class="section-head"><h2>Acciones rápidas</h2></div><div class="quick-grid">
-      <button class="quick" data-action="new-client"><span>👤</span>Nuevo cliente</button><button class="quick" data-action="new-visit"><span>📅</span>Nueva visita</button><button class="quick" data-view="clients"><span>◉</span>Clientes</button><button class="quick" data-view="sales"><span>€</span>Ventas</button>
-    </div></div>
-  </div>`;
+ const y=2026,total=clientSalesAll(y),prev=clientSalesAll(2025), goal=Number(state.meta.annualGoal||0), r=rankings(),up=r.up.length,down=r.down.length;
+ const pm=monthlySales(2026), cm=monthlySales(2025), max=Math.max(...pm,...cm,1);
+ return `<div class="grid gap">
+ <div class="grid two-col">
+  <div class="card hero"><div class="muted">FACTURACIÓN 2026</div><div class="big">${euro(total)}</div><div class="muted">2025: ${euro(prev)} · Variación: <b class="${total>=prev?"positive":"negative"}">${euro(total-prev)}</b></div>${goal?`<div class="progress"><span style="width:${Math.min(pct(total,goal),100)}%"></span></div><div class="muted small">Objetivo ${euro(goal)} · ${pct(total,goal)}%</div>`:""}</div>
+  <div class="card"><div class="section-head"><h2>Clientes: evolución</h2><span class="hint">2026 vs 2025</span></div><div class="big-number">${up}<span class="positive"> suben</span></div><div class="big-number">${down}<span class="negative"> bajan</span></div><div class="muted small">El ranking se calcula por diferencia en euros.</div></div>
+ </div>
+ <div class="grid kpi-grid">${kpi("Clientes",state.clients.length,"cartera")}${kpi("Facturación 2025",euro(prev),"acumulado")}${kpi("Facturación 2026",euro(total),"acumulado")}${kpi("Variación",euro(total-prev),"2026 vs 2025",total>=prev?"positive":"negative")}</div>
+ <div class="grid two-col">
+  <div class="card"><div class="section-head"><h2>Facturación mensual</h2><span class="hint">2025 / 2026</span></div><div class="month-chart">${pm.map((v,i)=>`<div class="month-col"><div class="bars"><span class="bar y25" style="height:${Math.max(3,cm[i]/max*100)}%" title="${euro(cm[i])}"></span><span class="bar y26" style="height:${Math.max(3,v/max*100)}%" title="${euro(v)}"></span></div><small>${monthName(i).slice(0,3)}</small></div>`).join("")}</div><div class="legend"><span>2025</span><span>2026</span></div></div>
+  <div class="card"><div class="section-head"><h2>Mi día</h2><button class="tiny" data-action="new-visit">+ Visita</button></div>${upcomingVisits().slice(0,5).map(v=>`<div class="list-row"><div><b>${esc(clientName(v.clientId))}</b><small>${dateES(v.date)} ${v.time||""}</small></div><button class="tiny" data-complete="${v.id}">✓</button></div>`).join("")||`<div class="empty">No hay visitas pendientes.</div>`}</div>
+ </div>
+ <div class="grid rank-grid">${rankingCard("📈","Mayores subidas",r.up,true)}${rankingCard("📉","Mayores bajadas",r.down,false)}</div>
+ <div class="card"><div class="section-head"><h2>Acciones rápidas</h2></div><div class="quick-grid"><button class="quick" data-action="new-client">👤<b>Nuevo cliente</b></button><button class="quick" data-action="new-sale">€<b>Registrar venta</b></button><button class="quick" data-action="new-visit">📅<b>Nueva visita</b></button><button class="quick" data-view="sales">📊<b>Ver facturación</b></button></div></div>
+ </div>`
 }
-function kpi(label,value,sub){return `<div class="card kpi"><div class="label">${label}</div><div class="value">${value}</div><div class="sub">${sub}</div></div>`}
-function dayItems(items){
-  if(!items.length)return `<div class="empty"><strong>Todo al día</strong>No hay visitas pendientes.</div>`;
-  return `<div class="list">${items.map(v=>`<div class="list-row"><div class="list-main"><strong>${esc(clientName(v.clientId))}</strong><small>${dateES(v.date)} ${v.time||""} · ${esc(v.reason||"Visita")}</small></div><button class="tiny" data-complete-visit="${v.id}">✓</button></div>`).join("")}</div>`;
+function clientSalesAll(y){return state.sales.filter(s=>new Date(s.date+"T12:00:00").getFullYear()===y).reduce((a,s)=>a+Number(s.amount||0),0)}
+function rankingCard(icon,title,arr,positive){
+ return `<div class="card"><div class="section-head"><h2>${icon} ${title}</h2><span class="hint">por €</span></div>${arr.slice(0,8).map(x=>`<div class="rank-row"><div><b>${esc(x.c.company)}</b><small>${esc(x.c.code)} · ${esc(x.c.locality||"")}</small></div><div class="${positive?"positive":"negative"}"><b>${positive?"+":""}${euro(x.d)}</b><small>${x.p>=0?"+":""}${x.p.toFixed(1)}%</small></div></div>`).join("")||`<div class="empty">Sin datos comparables.</div>`}</div>`
 }
 function clientsView(){
-  return `<div class="toolbar"><input class="search" id="clientSearch" placeholder="Buscar código, empresa, contacto, provincia..." /><select class="select" id="clientType"><option value="all">Todos</option><option value="client">Clientes</option><option value="prospect">Prospectos</option></select><button class="primary-btn" data-action="new-client">+ Nuevo</button></div>
-  <div class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Código</th><th>Empresa</th><th>Contacto</th><th>Tipo</th><th>Provincia</th><th>Ventas</th><th>Última visita</th><th></th></tr></thead><tbody id="clientsBody">${clientRows()}</tbody></table></div></div>`;
+ return `<div class="toolbar"><input class="search" id="clientSearch" placeholder="Buscar código, empresa, localidad, contacto..."><button class="primary-btn" data-action="new-client">+ Nuevo cliente</button></div>
+ <div class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Código</th><th>Taller / empresa</th><th>Localidad</th><th>2025</th><th>2026</th><th>Variación</th><th>Maps</th><th></th></tr></thead><tbody id="clientBody">${clientRows()}</tbody></table></div></div>`
 }
 function clientRows(){
-  const q=(document.getElementById("clientSearch")?.value||"").toLowerCase(), type=document.getElementById("clientType")?.value||"all";
-  const arr=state.clients.filter(c=>(type==="all"||c.type===type)&&[c.code,c.company,c.contact,c.province,c.phone].join(" ").toLowerCase().includes(q));
-  if(!arr.length)return `<tr><td colspan="8"><div class="empty"><strong>No hay resultados</strong>Añade tu primer cliente o prospecto.</div></td></tr>`;
-  return arr.map(c=>`<tr><td><strong>${esc(c.code||"—")}</strong></td><td><strong>${esc(c.company)}</strong><br><small>${esc(c.phone||"")}</small></td><td>${esc(c.contact||"—")}</td><td><span class="badge ${c.type}">${c.type==="client"?"Cliente":"Prospecto"}</span></td><td>${esc(c.province||"—")}</td><td>${euro(clientSales(c.id))}</td><td>${dateES(lastVisit(c.id))}</td><td><div class="row-actions"><button class="tiny" data-edit-client="${c.id}">Editar</button><button class="tiny danger-btn" data-delete-client="${c.id}">Borrar</button></div></td></tr>`).join("");
+ let q=(document.getElementById("clientSearch")?.value||"").toLowerCase();
+ let arr=state.clients.filter(c=>[c.code,c.company,c.locality,c.province,c.contact,c.phone].join(" ").toLowerCase().includes(q));
+ if(!arr.length)return`<tr><td colspan="8"><div class="empty">No hay clientes todavía.</div></td></tr>`;
+ return arr.map(c=>{let a=clientSales(c.id,2025),b=clientSales(c.id,2026),d=b-a;return`<tr><td><b>${esc(c.code)}</b></td><td><b>${esc(c.company||"Sin nombre")}</b><br><small>${esc(c.contact||"")}</small></td><td>${esc(c.locality||"—")}</td><td>${euro(a)}</td><td>${euro(b)}</td><td class="${d>0?"positive":d<0?"negative":""}">${d>0?"+":""}${euro(d)}</td><td>${c.mapsUrl?`<a class="maps-link" href="${esc(c.mapsUrl)}" target="_blank">📍 Abrir</a>`:"—"}</td><td><button class="tiny" data-edit="${c.id}">Editar</button></td></tr>`}).join("")
 }
 function visitsView(){
-  const pending=state.visits.filter(v=>v.status!=="done").sort((a,b)=>a.date.localeCompare(b.date));
-  const done=state.visits.filter(v=>v.status==="done").sort((a,b)=>b.date.localeCompare(a.date));
-  return `<div class="toolbar"><button class="primary-btn" data-action="new-visit">+ Nueva visita</button><div class="tabs"><button class="tab active">Pendientes ${pending.length}</button><button class="tab">Realizadas ${done.length}</button></div></div>
-  <div class="grid two-col"><div class="card"><div class="section-head"><h2>Próximas visitas</h2></div>${visitList(pending)}</div><div class="card"><div class="section-head"><h2>Visitas realizadas</h2></div>${visitList(done.slice(0,12),true)}</div></div>`;
+ let p=upcomingVisits(), done=state.visits.filter(v=>v.status==="done").sort((a,b)=>b.date.localeCompare(a.date));
+ return `<div class="toolbar"><button class="primary-btn" data-action="new-visit">+ Nueva visita</button></div><div class="grid two-col"><div class="card"><div class="section-head"><h2>Próximas</h2></div>${visitRows(p)}</div><div class="card"><div class="section-head"><h2>Realizadas</h2></div>${visitRows(done,true)}</div></div>`
 }
-function visitList(arr,done=false){
-  if(!arr.length)return `<div class="empty"><strong>Sin visitas</strong>Cuando crees una visita aparecerá aquí.</div>`;
-  return `<div class="list">${arr.map(v=>`<div class="list-row"><div class="list-main"><strong>${esc(clientName(v.clientId))}</strong><small>${dateES(v.date)} ${v.time||""} · ${esc(v.reason||"")}</small><small>${esc(v.result||v.nextStep||"")}</small></div>${done?`<span class="badge">Realizada</span>`:`<button class="tiny" data-complete-visit="${v.id}">Marcar realizada</button>`}</div>`).join("")}</div>`;
-}
+function upcomingVisits(){return state.visits.filter(v=>v.status!=="done"&&v.date>=today()).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))}
+function visitRows(a,done=false){return a.map(v=>`<div class="list-row"><div><b>${esc(clientName(v.clientId))}</b><small>${dateES(v.date)} ${v.time||""} · ${esc(v.reason||"")}</small></div>${done?`<span class="badge">Realizada</span>`:`<button class="tiny" data-complete="${v.id}">Realizada</button>`}</div>`).join("")||`<div class="empty">Sin visitas.</div>`}
 function mapView(){
-  const withAddr=state.clients.filter(c=>c.address||c.province);
-  return `<div class="card"><div class="section-head"><h2>Mapa comercial</h2><span class="hint">V1: cartera preparada para geolocalización</span></div><div class="empty"><strong>Mapa real en la siguiente fase</strong><p>La V1 guarda dirección y provincia para que podamos añadir geocodificación, mapa y rutas sin cambiar el modelo de datos.</p><p><b>${withAddr.length}</b> registros tienen datos de localización.</p></div></div>`;
+ let arr=state.clients.filter(c=>c.mapsUrl||c.address||c.locality);
+ return `<div class="card"><div class="section-head"><h2>Ubicación de talleres</h2><span class="hint">${arr.length} con localización</span></div><div class="map-list">${arr.map(c=>`<div class="map-row">${c.workshopPhoto?`<img src="${esc(c.workshopPhoto)}">`:`<div class="photo-placeholder">🏢</div>`}<div><b>${esc(c.company)}</b><small>${esc(c.locality||"")} ${esc(c.province||"")}</small></div>${c.mapsUrl?`<a class="primary-btn" href="${esc(c.mapsUrl)}" target="_blank">Google Maps</a>`:`<button class="tiny" data-edit="${c.id}">Añadir ubicación</button>`}</div>`).join("")||`<div class="empty">Añade localidad y ubicación a tus clientes.</div>`}</div>`
 }
 function salesView(){
-  const y=state.meta.year, arr=state.sales.filter(s=>new Date(s.date+"T12:00:00").getFullYear()===y);
-  const total=arr.reduce((a,s)=>a+Number(s.amount||0),0), goal=Number(state.meta.annualGoal||0);
-  return `<div class="toolbar"><button class="primary-btn" data-action="new-sale">+ Registrar venta</button><div class="card" style="padding:9px 12px">Objetivo ${y}: <strong>${euro(goal)}</strong> · Cumplimiento <strong>${pct(total,goal)}%</strong></div></div>
-  <div class="grid three-col">${kpi("Ventas del año",euro(total),String(arr.length)+" operaciones")}${kpi("Objetivo",euro(goal),"configurado")}${kpi("Margen medio",arr.length?(arr.reduce((a,s)=>a+Number(s.margin||0),0)/arr.length).toFixed(1)+"%":"0%","sobre ventas registradas")}</div>
-  <div class="card table-card" style="margin-top:16px"><div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha</th><th>Cliente</th><th>Importe</th><th>Margen</th><th>Referencia</th></tr></thead><tbody>${arr.length?arr.sort((a,b)=>b.date.localeCompare(a.date)).map(s=>`<tr><td>${dateES(s.date)}</td><td>${esc(clientName(s.clientId))}</td><td><strong>${euro(s.amount)}</strong></td><td>${Number(s.margin||0).toFixed(1)}%</td><td>${esc(s.note||"—")}</td></tr>`).join(""):`<tr><td colspan="5"><div class="empty"><strong>Sin ventas registradas</strong>Registra la primera para activar el dashboard.</div></td></tr>`}</tbody></table></div></div>`;
+ let y2025=clientSalesAll(2025),y2026=clientSalesAll(2026),m25=monthlySales(2025),m26=monthlySales(2026),r=rankings();
+ return `<div class="toolbar"><button class="primary-btn" data-action="new-sale">+ Registrar venta</button><div class="card compact">2025: <b>${euro(y2025)}</b> · 2026: <b>${euro(y2026)}</b> · Variación: <b class="${y2026>=y2025?"positive":"negative"}">${euro(y2026-y2025)}</b></div></div>
+ <div class="grid three-col">${kpi("Facturación 2025",euro(y2025),"acumulado")}${kpi("Facturación 2026",euro(y2026),"acumulado")}${kpi("Variación 2026/25",euro(y2026-y2025),"diferencia",y2026>=y2025?"positive":"negative")}</div>
+ <div class="card table-card" style="margin-top:16px"><div class="table-wrap"><table class="data-table"><thead><tr><th>Mes</th><th>2025</th><th>2026</th><th>Variación</th></tr></thead><tbody>${m25.map((v,i)=>`<tr><td><b>${monthName(i)}</b></td><td>${euro(v)}</td><td>${euro(m26[i])}</td><td class="${m26[i]-v>=0?"positive":"negative"}">${m26[i]-v>=0?"+":""}${euro(m26[i]-v)}</td></tr>`).join("")}</tbody></table></div></div>
+ <div class="card table-card" style="margin-top:16px"><div class="section-head"><h2>Operaciones registradas</h2></div><div class="table-wrap"><table class="data-table"><thead><tr><th>Fecha</th><th>Código</th><th>Cliente</th><th>Importe</th></tr></thead><tbody>${state.sales.slice().sort((a,b)=>b.date.localeCompare(a.date)).map(s=>{let c=state.clients.find(x=>x.id===s.clientId);return`<tr><td>${dateES(s.date)}</td><td>${esc(c?.code||"—")}</td><td>${esc(c?.company||"—")}</td><td><b>${euro(s.amount)}</b></td></tr>`}).join("")||`<tr><td colspan="4"><div class="empty">Sin ventas registradas.</div></td></tr>`}</tbody></table></div></div>
+ <div class="grid rank-grid" style="margin-top:16px">${rankingCard("📈","Subidas",r.up,true)}${rankingCard("📉","Bajadas",r.down,false)}</div>`
 }
 function settingsView(){
-  return `<div class="grid settings-grid">
-    <div class="card"><div class="section-head"><h2>Objetivo comercial</h2></div><div class="field"><label>Objetivo anual ${state.meta.year}</label><input id="annualGoal" type="number" min="0" step="100" value="${Number(state.meta.annualGoal||0)}"></div><button class="primary-btn" id="saveGoal" style="margin-top:12px">Guardar objetivo</button></div>
-    <div class="card"><div class="section-head"><h2>Datos</h2><span class="hint">Siempre exportables</span></div>
-      ${settingButton("⬇️","Exportar todos los datos","export-json")}${settingButton("📊","Exportar clientes CSV","export-clients")}${settingButton("📅","Exportar visitas CSV","export-visits")}${settingButton("€","Exportar ventas CSV","export-sales")}${settingButton("⬆️","Importar / restaurar copia","import-json")}
-      <input type="file" id="importFile" accept=".json,application/json" hidden>
-    </div>
-  </div>
-  <div class="card" style="margin-top:16px"><div class="section-head"><h2>Arquitectura multiusuario</h2></div><p style="color:var(--muted);line-height:1.6">La V1 utiliza un <b>userId</b> local y separa clientes, visitas y ventas. Esto permite migrar posteriormente a autenticación y base de datos en la nube, con permisos por comercial, sin rehacer la interfaz.</p><div class="settings-item"><span>Usuario actual</span><strong>${esc(CURRENT_USER.name)}</strong></div><div class="settings-item"><span>Rol preparado</span><strong>${esc(CURRENT_USER.role)}</strong></div></div>`;
+ return `<div class="grid two-col"><div class="card"><h2>Objetivo 2026</h2><div class="field"><label>Objetivo anual</label><input id="goal" type="number" value="${Number(state.meta.annualGoal||0)}"></div><button class="primary-btn" id="saveGoal">Guardar</button></div>
+ <div class="card"><h2>Datos</h2><div class="settings-item"><span>Exportar copia completa</span><button class="tiny" data-action="export-json">Exportar</button></div><div class="settings-item"><span>Exportar clientes CSV</span><button class="tiny" data-action="export-clients">CSV</button></div><div class="settings-item"><span>Exportar ventas CSV</span><button class="tiny" data-action="export-sales">CSV</button></div><div class="settings-item"><span>Restaurar copia JSON</span><button class="tiny" data-action="import-json">Importar</button></div><input id="importFile" type="file" accept=".json" hidden></div></div>
+ <div class="card" style="margin-top:16px"><h2>Datos siempre tuyos</h2><p class="muted">PEÑA CONNECT guarda los datos localmente en este iPhone y permite exportarlos. La actualización V2 conserva el mismo almacenamiento local.</p></div>`
 }
-function settingButton(icon,label,action){return `<div class="settings-item"><span>${icon} &nbsp;${label}</span><button class="tiny" data-action="${action}">Ejecutar</button></div>`}
-
-function bindView(){
-  document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>actions(b.dataset.action));
-  document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{currentView=b.dataset.view;render()});
-  document.querySelectorAll("[data-edit-client]").forEach(b=>b.onclick=()=>openClient(b.dataset.editClient));
-  document.querySelectorAll("[data-delete-client]").forEach(b=>b.onclick=()=>deleteClient(b.dataset.deleteClient));
-  document.querySelectorAll("[data-complete-visit]").forEach(b=>b.onclick=()=>completeVisit(b.dataset.completeVisit));
-  const search=document.getElementById("clientSearch"), type=document.getElementById("clientType");
-  if(search)search.oninput=()=>document.getElementById("clientsBody").innerHTML=clientRows();
-  if(type)type.onchange=()=>document.getElementById("clientsBody").innerHTML=clientRows();
-  const goal=document.getElementById("saveGoal"); if(goal)goal.onclick=()=>{state.meta.annualGoal=Number(document.getElementById("annualGoal").value||0);save();toast("Objetivo guardado");render()};
+function bind(){
+ document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{currentView=b.dataset.view;render()});
+ document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>action(b.dataset.action));
+ document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openClient(b.dataset.edit));
+ document.querySelectorAll("[data-complete]").forEach(b=>b.onclick=()=>{let v=state.visits.find(x=>x.id===b.dataset.complete);if(v){v.status="done";save();render()}});
+ const s=document.getElementById("clientSearch");if(s)s.oninput=()=>document.getElementById("clientBody").innerHTML=clientRows();
+ const g=document.getElementById("saveGoal");if(g)g.onclick=()=>{state.meta.annualGoal=+document.getElementById("goal").value||0;save();toast("Objetivo guardado");render()};
+ const f=document.getElementById("importFile");if(f)f.onchange=importFile;
+ document.getElementById("menuBtn")?.addEventListener("click",()=>document.querySelector(".sidebar").classList.toggle("open"));
 }
-function actions(a){
-  if(a==="new-client")openClient();
-  if(a==="new-visit")openVisit();
-  if(a==="new-sale")openSale();
-  if(a==="export-json")download("pena-connect-backup.json",JSON.stringify(state,null,2),"application/json");
-  if(a==="export-clients")download("pena-connect-clientes.csv",csv(state.clients), "text/csv;charset=utf-8");
-  if(a==="export-visits")download("pena-connect-visitas.csv",csv(state.visits.map(v=>({...v,client:clientName(v.clientId)}))),"text/csv;charset=utf-8");
-  if(a==="export-sales")download("pena-connect-ventas.csv",csv(state.sales.map(s=>({...s,client:clientName(s.clientId)}))),"text/csv;charset=utf-8");
-  if(a==="import-json")document.getElementById("importFile").click();
+function action(a){
+ if(a==="new-client")openClient();
+ if(a==="new-sale")openSale();
+ if(a==="new-visit")openVisit();
+ if(a==="export-json")download("pena-connect-backup.json",JSON.stringify(state,null,2),"application/json");
+ if(a==="export-clients")download("pena-connect-clientes.csv",csv(state.clients),"text/csv;charset=utf-8");
+ if(a==="export-sales")download("pena-connect-ventas.csv",csv(state.sales.map(s=>({...s,client:clientName(s.clientId)}))),"text/csv;charset=utf-8");
+ if(a==="import-json")document.getElementById("importFile").click();
 }
+function download(name,data,type){let a=document.createElement("a");a.href=URL.createObjectURL(new Blob(["\ufeff"+data],{type}));a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}
+function csv(rows){if(!rows.length)return"";let cols=[...new Set(rows.flatMap(x=>Object.keys(x)))];return[cols.join(","),...rows.map(r=>cols.map(c=>`"${String(r[c]??"").replaceAll('"','""')}"`).join(","))].join("\n")}
+function importFile(e){let f=e.target.files[0];if(!f)return;let r=new FileReader();r.onload=()=>{try{let x=JSON.parse(r.result);if(!x.clients||!x.sales)throw Error();state={...seed,...x};ensureClientCodes(state);save();toast("Copia restaurada");render()}catch(_){toast("Copia no válida")}};r.readAsText(f)}
+function field(label,name,val="",required=false,wide=false,type="text"){return`<div class="field ${wide?"wide":""}"><label>${label}</label><input name="${name}" type="${type}" value="${esc(val)}" ${required?"required":""}></div>`}
+function modal(title,body,onSave){
+ document.getElementById("modalRoot").innerHTML=`<div class="modal-back"><div class="modal"><div class="modal-head"><h2>${title}</h2><button class="icon-btn" id="closeModal">×</button></div>${body}<div class="modal-actions"><button class="ghost-btn" id="cancelModal">Cancelar</button><button class="primary-btn" id="saveModal">Guardar</button></div></div></div>`;
+ document.getElementById("closeModal").onclick=closeModal;document.getElementById("cancelModal").onclick=closeModal;document.getElementById("saveModal").onclick=onSave;
+}
+function closeModal(){document.getElementById("modalRoot").innerHTML=""}
+function formObj(id){let f=document.getElementById(id);return Object.fromEntries(new FormData(f).entries())}
 function openClient(id){
-  const c=id?state.clients.find(x=>x.id===id):{};
-  modal("Cliente / Prospecto",`<form id="clientForm"><div class="form-grid">
-  ${field("Código cliente","code",c.code||nextClientCode(),true)}${field("Empresa","company",c.company||"",true)}
-  ${field("Contacto","contact",c.contact||"")}
-  ${field("Teléfono","phone",c.phone||"")}${field("WhatsApp","whatsapp",c.whatsapp||"")}
-  ${field("Dirección","address",c.address||"")}${field("Provincia","province",c.province||"")}
-  ${selectField("Tipo","type",c.type||"client",[["client","Cliente"],["prospect","Prospecto"]])}
-  ${field("Marcas de tractores","tractorBrands",c.tractorBrands||"")}${field("Notas","notes",c.notes||"","",true)}
-  </div></form>`,()=>saveClient(id));
+ let c=id?state.clients.find(x=>x.id===id):{code:nextClientCode()};
+ modal("Ficha de cliente",`<form id="clientForm"><div class="client-photo"><div id="photoPreview">${c.workshopPhoto?`<img src="${esc(c.workshopPhoto)}" class="client-photo-preview">`:`<div class="photo-placeholder large">🏢</div>`}</div><label class="upload-btn">📸 Añadir foto del taller<input id="photoInput" type="file" accept="image/*" hidden></label></div><div class="form-grid">
+ ${field("Código de cliente","code",c.code||nextClientCode(),true)}${field("Nombre / taller","company",c.company||"",true)}
+ ${field("Localidad","locality",c.locality||"")}${field("Provincia","province",c.province||"")}
+ ${field("Persona de contacto","contact",c.contact||"")}${field("Teléfono","phone",c.phone||"")}
+ ${field("WhatsApp","whatsapp",c.whatsapp||"")}${field("Dirección","address",c.address||"")}
+ ${field("Ubicación Google Maps","mapsUrl",c.mapsUrl||"","",true)}${field("Notas","notes",c.notes||"","",true)}
+ </div></form>`,()=>saveClient(id));
+ document.getElementById("photoInput").onchange=e=>{let f=e.target.files[0];if(!f)return;let rr=new FileReader();rr.onload=()=>{document.getElementById("photoPreview").innerHTML=`<img src="${rr.result}" class="client-photo-preview">`;document.getElementById("photoPreview").dataset.photo=rr.result};rr.readAsDataURL(f)}
 }
-function openVisit(){
-  const todayDate=today();
-  modal("Nueva visita",`<form id="visitForm"><div class="form-grid">
-  ${selectField("Cliente / prospecto","clientId","",state.clients.map(c=>[c.id,c.company]))}
-  ${field("Fecha","date",todayDate,false,"date")}${field("Hora","time","",false,"time")}
-  ${field("Motivo","reason","Seguimiento comercial")}${field("Resultado","result","")}
-  ${field("Próximo paso","nextStep","")}${field("Notas","notes","", "", true)}
-  </div></form>`,saveVisit);
+function saveClient(id){
+ let o=formObj("clientForm"), existing=id?state.clients.find(c=>c.id===id):null;
+ if(!o.company){toast("Falta el nombre del taller");return}
+ if(!id)o.id=uid("c");
+ o.code=o.code.trim().toUpperCase()||nextClientCode();
+ const clash=state.clients.find(c=>c.code===o.code&&c.id!==id);if(clash){toast("Ese código ya existe");return}
+ if(!o.mapsUrl&&o.company){let q=[o.company,o.address,o.locality,o.province].filter(Boolean).join(", ");o.mapsUrl="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q)}
+ const photo=document.getElementById("photoPreview")?.dataset.photo;
+ o.workshopPhoto=photo||existing?.workshopPhoto||"";
+ o.id=id||o.id;
+ state.clients=id?state.clients.map(c=>c.id===id?{...c,...o}:c):[...state.clients,o];
+ save();closeModal();render();toast("Cliente guardado")
 }
 function openSale(){
-  modal("Registrar venta",`<form id="saleForm"><div class="form-grid">
-  ${selectField("Cliente","clientId","",state.clients.filter(c=>c.type==="client").map(c=>[c.id,c.company]))}
-  ${field("Fecha","date",today(),false,"date")}${field("Importe","amount","",true,"number")}${field("Margen %","margin","",false,"number")}
-  ${field("Referencia / nota","note","", "", true)}
-  </div></form>`,saveSale);
+ if(!state.clients.length){toast("Primero crea un cliente");return}
+ modal("Registrar facturación",`<form id="saleForm"><div class="form-grid">
+ <div class="field wide"><label>Cliente</label><select name="clientId">${state.clients.map(c=>`<option value="${c.id}">${esc(c.code)} · ${esc(c.company)}</option>`).join("")}</select></div>
+ ${field("Fecha","date",today(),true,false,"date")}${field("Importe (€)","amount","",true,false,"number")}${field("Margen %","margin","",false,false,"number")}${field("Referencia / nota","note","",false,true)}
+ </div></form>`,saveSale)
 }
-function field(label,name,value="",required=false,type="text",full=false){return `<div class="field ${full||name==="notes"?"full":""}"><label>${label}${required?" *":""}</label><input name="${name}" type="${type}" value="${esc(value)}" ${required?"required":""}></div>`}
-function selectField(label,name,value,opts){return `<div class="field"><label>${label}</label><select name="${name}">${opts.map(o=>`<option value="${esc(o[0])}" ${o[0]===value?"selected":""}>${esc(o[1])}</option>`).join("")}</select></div>`}
-function modal(title,body,onSave){
-  const root=document.getElementById("modalRoot"); root.innerHTML=`<div class="modal-backdrop"><div class="modal"><div class="modal-head"><h3>${title}</h3><button class="icon-btn" id="closeModal">×</button></div><div class="modal-body">${body}</div><div class="modal-foot"><button class="ghost-btn" id="cancelModal">Cancelar</button><button class="primary-btn" id="saveModal">Guardar</button></div></div></div>`;
-  const close=()=>root.innerHTML=""; document.getElementById("closeModal").onclick=close;document.getElementById("cancelModal").onclick=close;document.getElementById("saveModal").onclick=()=>{if(onSave()!==false)close()};
+function saveSale(){let o=formObj("saleForm");if(!o.clientId||!o.amount){toast("Indica cliente e importe");return}state.sales.push({id:uid("s"),clientId:o.clientId,date:o.date,amount:+o.amount,margin:+o.margin||0,note:o.note||""});save();closeModal();render();toast("Facturación registrada")}
+function openVisit(){
+ if(!state.clients.length){toast("Primero crea un cliente");return}
+ modal("Nueva visita",`<form id="visitForm"><div class="form-grid"><div class="field wide"><label>Cliente</label><select name="clientId">${state.clients.map(c=>`<option value="${c.id}">${esc(c.code)} · ${esc(c.company)}</option>`).join("")}</select></div>${field("Fecha","date",today(),true,false,"date")}${field("Hora","time","",false,false,"time")}${field("Motivo","reason","")}${field("Siguiente paso","nextStep","",false,true)}</div></form>`,saveVisit)
 }
-function formData(id){return Object.fromEntries(new FormData(document.getElementById(id)).entries())}
-function saveClient(id){
-  const d=formData("clientForm");
-  d.code=String(d.code||"").trim().toUpperCase();
-  d.company=String(d.company||"").trim();
-  if(!d.company)return false;
-  if(!d.code)d.code=nextClientCode();
-  const duplicate=state.clients.find(c=>c.code===d.code && c.id!==id);
-  if(duplicate){toast(`El código ${d.code} ya está asignado a ${duplicate.company}`);return false}
-  if(id)Object.assign(state.clients.find(c=>c.id===id),d); else state.clients.push({id:uid("c"),...d,userId:CURRENT_USER.id,createdAt:new Date().toISOString()});
-  save();toast(id?"Cliente actualizado":"Cliente creado");render();
-}
-function saveVisit(){
-  const d=formData("visitForm"); if(!d.clientId||!d.date){toast("Selecciona cliente y fecha");return false}
-  state.visits.push({id:uid("v"),...d,status:"planned",userId:CURRENT_USER.id,createdAt:new Date().toISOString()});save();toast("Visita creada");render();
-}
-function saveSale(){
-  const d=formData("saleForm"); if(!d.clientId||!d.amount){toast("Selecciona cliente e importe");return false}
-  state.sales.push({id:uid("s"),...d,amount:Number(d.amount),margin:Number(d.margin||0),userId:CURRENT_USER.id});save();toast("Venta registrada");render();
-}
-function completeVisit(id){const v=state.visits.find(x=>x.id===id);if(v){v.status="done";v.completedAt=new Date().toISOString();save();toast("Visita marcada como realizada");render()}}
-function deleteClient(id){if(confirm("¿Borrar este cliente? Las visitas y ventas relacionadas se conservarán.")){state.clients=state.clients.filter(c=>c.id!==id);save();render();toast("Cliente borrado")}}
-function clientName(id){return state.clients.find(c=>c.id===id)?.company||"Cliente eliminado"}
-function clientSales(id){return state.sales.filter(s=>s.clientId===id).reduce((a,s)=>a+Number(s.amount||0),0)}
-function lastVisit(id){const a=state.visits.filter(v=>v.clientId===id&&v.status==="done").sort((x,y)=>y.date.localeCompare(x.date));return a[0]?.date||""}
-function today(){return new Date().toISOString().slice(0,10)}
-function csv(rows){
-  if(!rows.length)return "";
-  const keys=[...new Set(rows.flatMap(r=>Object.keys(r)))];
-  const q=v=>`"${String(v??"").replace(/"/g,'""')}"`;
-  return "\ufeff"+keys.map(q).join(";")+"\n"+rows.map(r=>keys.map(k=>q(r[k])).join(";")).join("\n");
-}
-function download(name,data,type){const blob=new Blob([data],{type}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),500)}
-document.getElementById("menuBtn").onclick=()=>document.querySelector(".sidebar").classList.toggle("open");
-document.getElementById("quickBackup").onclick=()=>actions("export-json");
-document.getElementById("modalRoot").addEventListener("click",e=>{if(e.target.classList.contains("modal-backdrop"))e.currentTarget.innerHTML=""});
-document.addEventListener("change",e=>{
-  if(e.target.id==="importFile"&&e.target.files[0]){
-    const reader=new FileReader();reader.onload=()=>{try{const imported=JSON.parse(reader.result);if(!imported.clients||!imported.visits||!imported.sales)throw new Error();state=imported;ensureClientCodes(state);save();toast("Copia restaurada");render()}catch{toast("Archivo de copia no válido")}};reader.readAsText(e.target.files[0])
-  }
-});
-if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
+function saveVisit(){let o=formObj("visitForm");state.visits.push({id:uid("v"),...o,status:"pending"});save();closeModal();render();toast("Visita guardada")}
 render();
-
-
-/* PEÑA CONNECT V2 — migration for requested client fields */
-function ensureClientV2Fields(c, i) {
-  if (!c) return c;
-  if (!c.code) c.code = `C${String(i + 1).padStart(4, "0")}`;
-  if (c.locality == null) c.locality = c.city || "";
-  if (c.workshopPhoto == null) c.workshopPhoto = "";
-  if (c.mapsUrl == null) c.mapsUrl = c.googleMapsUrl || "";
-  return c;
-}
-if (Array.isArray(state.clients)) {
-  state.clients = state.clients.map(ensureClientV2Fields);
-  saveState();
-}
-function buildGoogleMapsUrl(query) {
-  return query ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query) : "";
-}
+if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});

@@ -18,10 +18,36 @@ const navItems = [
 function loadState(){
   try{
     const raw = localStorage.getItem(DB_KEY);
-    return raw ? {...seed, ...JSON.parse(raw)} : structuredClone(seed);
+    const loaded = raw ? {...seed, ...JSON.parse(raw)} : structuredClone(seed);
+    ensureClientCodes(loaded);
+    return loaded;
   }catch(e){ return structuredClone(seed); }
 }
 function save(){ localStorage.setItem(DB_KEY, JSON.stringify(state)); }
+function nextClientCode(clients=state.clients){
+  const nums = clients.map(c => {
+    const m = String(c.code||"").match(/^(?:C|CLI)[- ]?(\d+)$/i);
+    return m ? Number(m[1]) : 0;
+  });
+  return `C${String(Math.max(0,...nums)+1).padStart(4,"0")}`;
+}
+function ensureClientCodes(target=state){
+  const used = new Set();
+  let changed = false;
+  for(const c of (target.clients||[])){
+    const code = String(c.code||"").trim().toUpperCase();
+    if(code && !used.has(code)){ c.code = code; used.add(code); }
+    else {
+      let n = 1;
+      while(used.has(`C${String(n).padStart(4,"0")}`)) n++;
+      c.code = `C${String(n).padStart(4,"0")}`;
+      used.add(c.code);
+      changed = true;
+    }
+  }
+  if(changed && target === state) save();
+  return target;
+}
 function uid(prefix){ return prefix+"_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,7); }
 function esc(v=""){return String(v).replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 function euro(v){return new Intl.NumberFormat("es-ES",{style:"currency",currency:"EUR",maximumFractionDigits:0}).format(Number(v)||0)}
@@ -81,14 +107,14 @@ function dayItems(items){
   return `<div class="list">${items.map(v=>`<div class="list-row"><div class="list-main"><strong>${esc(clientName(v.clientId))}</strong><small>${dateES(v.date)} ${v.time||""} · ${esc(v.reason||"Visita")}</small></div><button class="tiny" data-complete-visit="${v.id}">✓</button></div>`).join("")}</div>`;
 }
 function clientsView(){
-  return `<div class="toolbar"><input class="search" id="clientSearch" placeholder="Buscar empresa, contacto, provincia..." /><select class="select" id="clientType"><option value="all">Todos</option><option value="client">Clientes</option><option value="prospect">Prospectos</option></select><button class="primary-btn" data-action="new-client">+ Nuevo</button></div>
-  <div class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Empresa</th><th>Contacto</th><th>Tipo</th><th>Provincia</th><th>Ventas</th><th>Última visita</th><th></th></tr></thead><tbody id="clientsBody">${clientRows()}</tbody></table></div></div>`;
+  return `<div class="toolbar"><input class="search" id="clientSearch" placeholder="Buscar código, empresa, contacto, provincia..." /><select class="select" id="clientType"><option value="all">Todos</option><option value="client">Clientes</option><option value="prospect">Prospectos</option></select><button class="primary-btn" data-action="new-client">+ Nuevo</button></div>
+  <div class="card table-card"><div class="table-wrap"><table class="data-table"><thead><tr><th>Código</th><th>Empresa</th><th>Contacto</th><th>Tipo</th><th>Provincia</th><th>Ventas</th><th>Última visita</th><th></th></tr></thead><tbody id="clientsBody">${clientRows()}</tbody></table></div></div>`;
 }
 function clientRows(){
   const q=(document.getElementById("clientSearch")?.value||"").toLowerCase(), type=document.getElementById("clientType")?.value||"all";
-  const arr=state.clients.filter(c=>(type==="all"||c.type===type)&&[c.company,c.contact,c.province,c.phone].join(" ").toLowerCase().includes(q));
-  if(!arr.length)return `<tr><td colspan="7"><div class="empty"><strong>No hay resultados</strong>Añade tu primer cliente o prospecto.</div></td></tr>`;
-  return arr.map(c=>`<tr><td><strong>${esc(c.company)}</strong><br><small>${esc(c.phone||"")}</small></td><td>${esc(c.contact||"—")}</td><td><span class="badge ${c.type}">${c.type==="client"?"Cliente":"Prospecto"}</span></td><td>${esc(c.province||"—")}</td><td>${euro(clientSales(c.id))}</td><td>${dateES(lastVisit(c.id))}</td><td><div class="row-actions"><button class="tiny" data-edit-client="${c.id}">Editar</button><button class="tiny danger-btn" data-delete-client="${c.id}">Borrar</button></div></td></tr>`).join("");
+  const arr=state.clients.filter(c=>(type==="all"||c.type===type)&&[c.code,c.company,c.contact,c.province,c.phone].join(" ").toLowerCase().includes(q));
+  if(!arr.length)return `<tr><td colspan="8"><div class="empty"><strong>No hay resultados</strong>Añade tu primer cliente o prospecto.</div></td></tr>`;
+  return arr.map(c=>`<tr><td><strong>${esc(c.code||"—")}</strong></td><td><strong>${esc(c.company)}</strong><br><small>${esc(c.phone||"")}</small></td><td>${esc(c.contact||"—")}</td><td><span class="badge ${c.type}">${c.type==="client"?"Cliente":"Prospecto"}</span></td><td>${esc(c.province||"—")}</td><td>${euro(clientSales(c.id))}</td><td>${dateES(lastVisit(c.id))}</td><td><div class="row-actions"><button class="tiny" data-edit-client="${c.id}">Editar</button><button class="tiny danger-btn" data-delete-client="${c.id}">Borrar</button></div></td></tr>`).join("");
 }
 function visitsView(){
   const pending=state.visits.filter(v=>v.status!=="done").sort((a,b)=>a.date.localeCompare(b.date));
@@ -147,7 +173,8 @@ function actions(a){
 function openClient(id){
   const c=id?state.clients.find(x=>x.id===id):{};
   modal("Cliente / Prospecto",`<form id="clientForm"><div class="form-grid">
-  ${field("Empresa","company",c.company||"",true)}${field("Contacto","contact",c.contact||"")}
+  ${field("Código cliente","code",c.code||nextClientCode(),true)}${field("Empresa","company",c.company||"",true)}
+  ${field("Contacto","contact",c.contact||"")}
   ${field("Teléfono","phone",c.phone||"")}${field("WhatsApp","whatsapp",c.whatsapp||"")}
   ${field("Dirección","address",c.address||"")}${field("Provincia","province",c.province||"")}
   ${selectField("Tipo","type",c.type||"client",[["client","Cliente"],["prospect","Prospecto"]])}
@@ -178,7 +205,13 @@ function modal(title,body,onSave){
 }
 function formData(id){return Object.fromEntries(new FormData(document.getElementById(id)).entries())}
 function saveClient(id){
-  const d=formData("clientForm"); if(!d.company)return false;
+  const d=formData("clientForm");
+  d.code=String(d.code||"").trim().toUpperCase();
+  d.company=String(d.company||"").trim();
+  if(!d.company)return false;
+  if(!d.code)d.code=nextClientCode();
+  const duplicate=state.clients.find(c=>c.code===d.code && c.id!==id);
+  if(duplicate){toast(`El código ${d.code} ya está asignado a ${duplicate.company}`);return false}
   if(id)Object.assign(state.clients.find(c=>c.id===id),d); else state.clients.push({id:uid("c"),...d,userId:CURRENT_USER.id,createdAt:new Date().toISOString()});
   save();toast(id?"Cliente actualizado":"Cliente creado");render();
 }
@@ -208,8 +241,26 @@ document.getElementById("quickBackup").onclick=()=>actions("export-json");
 document.getElementById("modalRoot").addEventListener("click",e=>{if(e.target.classList.contains("modal-backdrop"))e.currentTarget.innerHTML=""});
 document.addEventListener("change",e=>{
   if(e.target.id==="importFile"&&e.target.files[0]){
-    const reader=new FileReader();reader.onload=()=>{try{const imported=JSON.parse(reader.result);if(!imported.clients||!imported.visits||!imported.sales)throw new Error();state=imported;save();toast("Copia restaurada");render()}catch{toast("Archivo de copia no válido")}};reader.readAsText(e.target.files[0])
+    const reader=new FileReader();reader.onload=()=>{try{const imported=JSON.parse(reader.result);if(!imported.clients||!imported.visits||!imported.sales)throw new Error();state=imported;ensureClientCodes(state);save();toast("Copia restaurada");render()}catch{toast("Archivo de copia no válido")}};reader.readAsText(e.target.files[0])
   }
 });
 if("serviceWorker" in navigator)window.addEventListener("load",()=>navigator.serviceWorker.register("sw.js").catch(()=>{}));
 render();
+
+
+/* PEÑA CONNECT V2 — migration for requested client fields */
+function ensureClientV2Fields(c, i) {
+  if (!c) return c;
+  if (!c.code) c.code = `C${String(i + 1).padStart(4, "0")}`;
+  if (c.locality == null) c.locality = c.city || "";
+  if (c.workshopPhoto == null) c.workshopPhoto = "";
+  if (c.mapsUrl == null) c.mapsUrl = c.googleMapsUrl || "";
+  return c;
+}
+if (Array.isArray(state.clients)) {
+  state.clients = state.clients.map(ensureClientV2Fields);
+  saveState();
+}
+function buildGoogleMapsUrl(query) {
+  return query ? "https://www.google.com/maps/search/?api=1&query=" + encodeURIComponent(query) : "";
+}

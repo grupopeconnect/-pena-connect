@@ -46,3 +46,9 @@ button{cursor:pointer}
   .sidebar{transform:translateX(-100%);transition:.2s}.sidebar.open{transform:translateX(0)}.main{margin-left:0;width:100%}.mobile-only{display:inline-flex}.topbar{height:72px;padding:0 15px}.topbar h1{font-size:20px}.top-actions .ghost-btn{display:none}.content{padding:17px 15px 35px}.kpi-grid{grid-template-columns:1fr 1fr;gap:10px}.card{padding:15px;border-radius:15px}.kpi .value{font-size:22px}.quick-grid{grid-template-columns:1fr 1fr}.form-grid{grid-template-columns:1fr}.field.full{grid-column:auto}.three-col{grid-template-columns:1fr}
 }
 @media(max-width:390px){.kpi-grid{grid-template-columns:1fr}.quick-grid{grid-template-columns:1fr}}
+
+.client-v2-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.client-photo-preview{width:100%;max-width:260px;aspect-ratio:4/3;object-fit:cover;border-radius:14px;border:1px solid var(--border,#ddd)}
+.rank-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.rank-card{border:1px solid var(--border,#ddd);border-radius:16px;padding:16px}
+@media(max-width:700px){.client-v2-grid,.rank-grid{grid-template-columns:1fr}}

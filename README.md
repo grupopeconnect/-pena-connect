@@ -29,3 +29,10 @@ CRM comercial PWA orientado a móvil.
 - Estadística avanzada y comparativa año anterior.
 - Autenticación, backend, sincronización y multiusuario.
 - Roles de administrador y permisos.
+
+## Códigos de cliente
+La V1 incorpora un código único para cada cliente/prospecto, con formato `C0001`, `C0002`, etc. El código queda asociado al registro y puede editarse manualmente. También se puede buscar por código.
+
+
+## PEÑA CONNECT V2
+Código de cliente, localidad, facturación 2025/2026, indicadores y ranking de subidas/bajadas, foto del taller y ubicación mediante Google Maps. Se eliminan marcas de tractores y tipo de cliente.

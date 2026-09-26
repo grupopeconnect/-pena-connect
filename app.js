@@ -10,7 +10,7 @@ function loadState(){
     const x=raw?{...seed,...JSON.parse(raw)}:structuredClone(seed);
     x.clients=x.clients||[];x.visits=x.visits||[];x.sales=x.sales||[];x.meta=x.meta||seed.meta;
     ensureClientCodes(x);
-    x.clients.forEach(c=>{c.locality=c.locality??c.city??"";c.workshopPhoto=c.workshopPhoto??c.photo??"";c.mapsUrl=c.mapsUrl??c.googleMapsUrl??"";});
+    x.clients.forEach(c=>{c.locality=c.locality??c.city??"";c.workshopPhoto=c.workshopPhoto??c.photo??"";c.mapsUrl=c.mapsUrl??c.googleMapsUrl??"";c.typeClient=["Cooperativa","Taller","Recambios"].includes(c.typeClient)?c.typeClient:"";c.whatsapp=c.whatsapp??"";});
     localStorage.setItem(DB_KEY,JSON.stringify(x));
     return x;
   }catch(e){return structuredClone(seed)}
@@ -72,7 +72,7 @@ function clientsView(){
 }
 function clientRows(){
  let q=(document.getElementById("clientSearch")?.value||"").toLowerCase();
- let arr=state.clients.filter(c=>[c.code,c.company,c.locality,c.province,c.contact,c.phone].join(" ").toLowerCase().includes(q));
+ let arr=state.clients.filter(c=>[c.code,c.company,c.locality,c.province,c.contact,c.phone,c.whatsapp,c.typeClient].join(" ").toLowerCase().includes(q));
  if(!arr.length)return`<tr><td colspan="8"><div class="empty">No hay clientes todavía.</div></td></tr>`;
  return arr.map(c=>{let a=clientSales(c.id,2025),b=clientSales(c.id,2026),d=b-a;return`<tr><td><b>${esc(c.code)}</b></td><td><b>${esc(c.company||"Sin nombre")}</b><br><small>${esc(c.contact||"")}</small></td><td>${esc(c.locality||"—")}</td><td>${euro(a)}</td><td>${euro(b)}</td><td class="${d>0?"positive":d<0?"negative":""}">${d>0?"+":""}${euro(d)}</td><td>${c.mapsUrl?`<a class="maps-link" href="${esc(c.mapsUrl)}" target="_blank">📍 Abrir</a>`:"—"}</td><td><button class="tiny" data-edit="${c.id}">Editar</button></td></tr>`}).join("")
 }
@@ -100,14 +100,14 @@ function settingsView(){
  <div class="card" style="margin-top:16px"><h2>Datos siempre tuyos</h2><p class="muted">PEÑA CONNECT guarda los datos localmente en este iPhone y permite exportarlos. La actualización V2 conserva el mismo almacenamiento local.</p></div>`
 }
 function bind(){
- document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{currentView=b.dataset.view;render()});
+ document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{currentView=b.dataset.view;document.querySelector(".sidebar")?.classList.remove("open");document.body.classList.remove("menu-open");document.querySelector(".mobile-menu-backdrop")?.remove();render()});
  document.querySelectorAll("[data-action]").forEach(b=>b.onclick=()=>action(b.dataset.action));
  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>openClient(b.dataset.edit));
  document.querySelectorAll("[data-complete]").forEach(b=>b.onclick=()=>{let v=state.visits.find(x=>x.id===b.dataset.complete);if(v){v.status="done";save();render()}});
  const s=document.getElementById("clientSearch");if(s)s.oninput=()=>document.getElementById("clientBody").innerHTML=clientRows();
  const g=document.getElementById("saveGoal");if(g)g.onclick=()=>{state.meta.annualGoal=+document.getElementById("goal").value||0;save();toast("Objetivo guardado");render()};
  const f=document.getElementById("importFile");if(f)f.onchange=importFile;
- document.getElementById("menuBtn")?.addEventListener("click",()=>document.querySelector(".sidebar").classList.toggle("open"));
+ document.getElementById("menuBtn")?.addEventListener("click",toggleMenu);
 }
 function action(a){
  if(a==="new-client")openClient();
@@ -133,7 +133,8 @@ function openClient(id){
  modal("Ficha de cliente",`<form id="clientForm"><div class="client-photo"><div id="photoPreview">${c.workshopPhoto?`<img src="${esc(c.workshopPhoto)}" class="client-photo-preview">`:`<div class="photo-placeholder large">🏢</div>`}</div><label class="upload-btn">📸 Añadir foto del taller<input id="photoInput" type="file" accept="image/*" hidden></label></div><div class="form-grid">
  ${field("Código de cliente","code",c.code||nextClientCode(),true)}${field("Nombre / taller","company",c.company||"",true)}
  ${field("Localidad","locality",c.locality||"")}${field("Provincia","province",c.province||"")}
- ${field("Persona de contacto","contact",c.contact||"")}${field("Teléfono","phone",c.phone||"")}
+ <div class="field"><label>Tipo de cliente</label><select name="typeClient"><option value="">Seleccionar</option>${["Cooperativa","Taller","Recambios"].map(t=>`<option value="${t}" ${c.typeClient===t?"selected":""}>${t}</option>`).join("")}</select></div>
+ ${field("Persona de contacto","contact",c.contact||"")}${field("Teléfono / WhatsApp","whatsapp",c.whatsapp||c.phone||"")}
  ${field("WhatsApp","whatsapp",c.whatsapp||"")}${field("Dirección","address",c.address||"")}
  ${field("Ubicación Google Maps","mapsUrl",c.mapsUrl||"","",true)}${field("Notas","notes",c.notes||"","",true)}
  </div></form>`,()=>saveClient(id));
@@ -148,6 +149,8 @@ function saveClient(id){
  if(!o.mapsUrl&&o.company){let q=[o.company,o.address,o.locality,o.province].filter(Boolean).join(", ");o.mapsUrl="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(q)}
  const photo=document.getElementById("photoPreview")?.dataset.photo;
  o.workshopPhoto=photo||existing?.workshopPhoto||"";
+ if(existing?.phone && !o.whatsapp) o.whatsapp=existing.phone;
+ o.phone=existing?.phone||"";
  o.id=id||o.id;
  state.clients=id?state.clients.map(c=>c.id===id?{...c,...o}:c):[...state.clients,o];
  save();closeModal();render();toast("Cliente guardado")
@@ -165,5 +168,6 @@ function openVisit(){
  modal("Nueva visita",`<form id="visitForm"><div class="form-grid"><div class="field wide"><label>Cliente</label><select name="clientId">${state.clients.map(c=>`<option value="${c.id}">${esc(c.code)} · ${esc(c.company)}</option>`).join("")}</select></div>${field("Fecha","date",today(),true,false,"date")}${field("Hora","time","",false,false,"time")}${field("Motivo","reason","")}${field("Siguiente paso","nextStep","",false,true)}</div></form>`,saveVisit)
 }
 function saveVisit(){let o=formObj("visitForm");state.visits.push({id:uid("v"),...o,status:"pending"});save();closeModal();render();toast("Visita guardada")}
+function toggleMenu(){const side=document.querySelector(".sidebar");const open=side.classList.toggle("open");document.body.classList.toggle("menu-open",open);document.querySelector(".mobile-menu-backdrop")?.remove();if(open){const b=document.createElement("div");b.className="mobile-menu-backdrop";b.onclick=toggleMenu;document.body.appendChild(b)}}
 render();
 if("serviceWorker"in navigator)navigator.serviceWorker.register("sw.js").catch(()=>{});
